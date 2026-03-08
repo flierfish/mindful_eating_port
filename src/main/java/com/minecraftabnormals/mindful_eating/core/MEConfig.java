@@ -35,23 +35,38 @@ public class MEConfig {
                 // reload original values for food, so if changes are removed they leave no trace
 
                 for (Map.Entry<String, Integer> entry : MindfulEating.ORIGINAL_ITEMS.entrySet()) {
-                    Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(entry.getKey()));
-                    MEOverrides.changeStackability(item, entry.getValue());
+                    String key = entry.getKey();
+                    if (key == null) continue;
+                    ResourceLocation itemRl = ResourceLocation.tryParse(key);
+                    if (itemRl == null) continue;
+                    Item item = ForgeRegistries.ITEMS.getValue(itemRl);
+                    if (item != null) {
+                        MEOverrides.changeStackability(item, entry.getValue());
+                    }
                 }
 
                 for (Map.Entry<String, FoodProperties> entry : MindfulEating.ORIGINAL_FOODS.entrySet()) {
-                    Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(entry.getKey()));
-                    MEOverrides.changeHunger(item, entry.getValue().getNutrition());
-                    MEOverrides.changeSaturation(item, entry.getValue().getSaturationModifier());
-                    MEOverrides.changeFastEating(item, entry.getValue().isFastFood());
-                    MEOverrides.changeCanEatWhenFull(item, entry.getValue().canAlwaysEat());
+                    String key = entry.getKey();
+                    if (key == null) continue;
+                    ResourceLocation itemRl = ResourceLocation.tryParse(key);
+                    if (itemRl == null) continue;
+                    Item item = ForgeRegistries.ITEMS.getValue(itemRl);
+                    if (item != null) {
+                        MEOverrides.changeHunger(item, entry.getValue().getNutrition());
+                        MEOverrides.changeSaturation(item, entry.getValue().getSaturationModifier());
+                        MEOverrides.changeFastEating(item, entry.getValue().isFastFood());
+                        MEOverrides.changeCanEatWhenFull(item, entry.getValue().canAlwaysEat());
+                    }
                 }
 
-                ResourceLocation path = new ResourceLocation(MindfulEating.MODID, "food_changes.json");
-                Optional<Resource> resource = resourceManager.getResource(path);
+                ResourceLocation path = ResourceLocation.fromNamespaceAndPath(MindfulEating.MODID, "food_changes.json");
+                Optional<Resource> resource = Optional.empty();
+                if (path != null) {
+                    resource = resourceManager.getResource(path);
+                }
                 if(resource.isPresent()){
                     try (BufferedReader reader = new BufferedReader(new InputStreamReader(resource.get().open()))) {
-                        JsonObject json = new JsonParser().parse(reader).getAsJsonObject();
+                        JsonObject json = JsonParser.parseReader(reader).getAsJsonObject();
 
                         String[] names = {"hunger", "saturation", "speedy", "stackability", "gorgable"};
 
@@ -61,20 +76,28 @@ public class MEConfig {
 
                             for (Map.Entry<String, JsonElement> map : object.entrySet()) {
                                 String name = map.getKey();
-                                Item item = ForgeRegistries.ITEMS.getValue(new ResourceLocation(name));
+                                if (name == null) continue;
+                                ResourceLocation itemRl = ResourceLocation.tryParse(name);
+                                if (itemRl == null) continue;
+                                Item item = ForgeRegistries.ITEMS.getValue(itemRl);
+                                if (item == null) continue;
 
                                 // record original values before food is changed for the first time
                                 if (!MindfulEating.ORIGINAL_ITEMS.containsKey(name)) {
-                                    MindfulEating.ORIGINAL_ITEMS.put(name, item.getMaxStackSize());
+                                    @SuppressWarnings("deprecation")
+                                    int maxStackSize = item.getMaxStackSize();
+                                    MindfulEating.ORIGINAL_ITEMS.put(name, maxStackSize);
                                 }
 
                                 if (item.isEdible() && !MindfulEating.ORIGINAL_FOODS.containsKey(name)) {
-                                    FoodProperties food = item.getFoodProperties();
-                                    FoodProperties.Builder builder = (new FoodProperties.Builder()).nutrition(food.getNutrition())
-                                            .saturationMod(food.getSaturationModifier());
-                                    if (food.isFastFood()) builder.fast();
-                                    if (food.canAlwaysEat()) builder.alwaysEat();
-                                    MindfulEating.ORIGINAL_FOODS.put(name, builder.build());
+                                    FoodProperties food = item.getFoodProperties(item.getDefaultInstance(), null);
+                                    if (food != null) {
+                                        FoodProperties.Builder builder = (new FoodProperties.Builder()).nutrition(food.getNutrition())
+                                                .saturationMod(food.getSaturationModifier());
+                                        if (food.isFastFood()) builder.fast();
+                                        if (food.canAlwaysEat()) builder.alwaysEat();
+                                        MindfulEating.ORIGINAL_FOODS.put(name, builder.build());
+                                    }
                                 }
 
                                 // reflects values
@@ -128,7 +151,9 @@ public class MEConfig {
             builder.pop();
             builder.comment("For multiple food groups, separate groups with a /, for example: fruits/vegetables.").push("exhaustion sources");
 
-            foodGroupExhaustion = new ConfigValue[8];
+            @SuppressWarnings("unchecked")
+            ConfigValue<String>[] tempFoodGroupExhaustion = new ConfigValue[8];
+            foodGroupExhaustion = tempFoodGroupExhaustion;
             String[] defaultFoodGroup = {"fruits", "vegetables", "vegetables", "grains", "proteins", "proteins", "sugars", "sugars"};
 
             for (int i = 0; i < foodGroupExhaustion.length; i++) {

@@ -95,23 +95,30 @@ mixin {
 }
 repositories {
     maven {
+        url "https://maven.minecraftforge.net/"
+    }
+    maven {
+        url "https://repo.spongepowered.org/repository/maven-public/"
+    }
+    maven {
         url "https://cursemaven.com"
         content {
             includeGroup "curse.maven"
         }
-    }
-    maven {
-        url "https://maven.jaackson.me"
     }
 }
 
 dependencies {
     minecraft "net.minecraftforge:forge:${project.minecraft}-${project.forge}"
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    // 必需依赖
     implementation fg.deobf("curse.maven:blueprint-382216:${project.blueprint}")
     implementation fg.deobf("curse.maven:diet-443570:${project.diet}")
-    implementation fg.deobf("curse.maven:appleskin-248787:${project.apple}")
-    implementation fg.deobf("curse.maven:farmers-delight-398521:${project.farmers}")
+    // 可选兼容
+    compileOnly fg.deobf("curse.maven:appleskin-248787:${project.apple}")
+    compileOnly fg.deobf("curse.maven:farmers-delight-398521:${project.farmers}")
+    // 本地库
+    implementation fg.deobf(fileTree(dir: 'libs', include: ['*.jar']))
 }
 
 tasks.named('jar', Jar).configure {
@@ -132,4 +139,12 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+processResources {
+    inputs.property "version", project.modVersion
+
+    filesMatching("META-INF/mods.toml") {
+        expand "version": project.modVersion
+    }
 }

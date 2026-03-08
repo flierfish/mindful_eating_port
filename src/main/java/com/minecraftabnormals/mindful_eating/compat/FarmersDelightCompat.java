@@ -32,10 +32,17 @@ public class FarmersDelightCompat {
     public static void pieEatenCheck(Block block, Player player, ItemStack heldItem) {
         if (block instanceof PieBlock) {
             Set<IDietGroup> groups = DietApi.getInstance().getGroups(player, new ItemStack(block));
-            if (player.getFoodData().needsFood() && !groups.isEmpty() && !heldItem.is(TagUtil.itemTag("forge", "tools/knives"))) {
-                ResourceLocation currentFood = new ResourceLocation(block.asItem().getDescriptionId());
-                IDataManager playerManager = ((IDataManager) player);
-                playerManager.setValue(MindfulEating.LAST_FOOD, currentFood);
+            String descId = block.asItem().getDescriptionId();
+            if (player.getFoodData().needsFood() && !groups.isEmpty() && descId != null) {
+                var tag = TagUtil.itemTag("forge", "tools/knives");
+                if (tag != null && !heldItem.is(tag)) {
+                    String rawId = descId.replaceFirst("^item\\.", "").replaceFirst("^block\\.", "").replace(".", ":");
+                    ResourceLocation currentFood = rawId != null ? ResourceLocation.tryParse(rawId) : null;
+                    if (currentFood != null) {
+                        IDataManager playerManager = ((IDataManager) player);
+                        playerManager.setValue(MindfulEating.LAST_FOOD, currentFood);
+                    }
+                }
             }
         }
     }
