@@ -4,12 +4,13 @@ import com.illusivesoulworks.diet.api.DietApi;
 import com.illusivesoulworks.diet.api.DietEvent;
 import com.illusivesoulworks.diet.api.type.IDietGroup;
 import com.illusivesoulworks.diet.common.capability.DietCapability;
-import com.minecraftabnormals.mindful_eating.compat.FarmersDelightCompat;
 import com.minecraftabnormals.mindful_eating.compat.ModCompat;
 import com.minecraftabnormals.mindful_eating.core.ExhaustionSource;
 import com.minecraftabnormals.mindful_eating.core.MEConfig;
 import com.minecraftabnormals.mindful_eating.core.MindfulEating;
-import com.teamabnormals.blueprint.common.world.storage.tracking.IDataManager;
+import com.minecraftabnormals.mindful_eating.core.capability.IPlayerData;
+import com.minecraftabnormals.mindful_eating.core.capability.PlayerDataCapability;
+import com.minecraftabnormals.mindful_eating.core.network.PlayerDataSyncPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.FluidTags;
@@ -35,7 +36,6 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.ModList;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -47,7 +47,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @Mod.EventBusSubscriber(modid = MindfulEating.MODID)
 public class MEEvents {
 
-    // Cache for diet groups to avoid per-tick API calls on the server
     private static final Map<ResourceLocation, Set<IDietGroup>> DIET_CACHE = new HashMap<>();
 
     @SubscribeEvent
@@ -61,13 +60,14 @@ public class MEEvents {
             String descId = event.getItem().getDescriptionId();
             ResourceLocation currentFood = descId != null ? parse(descId) : null;
 
-            IDataManager playerManager = ((IDataManager) event.getEntity());
+            IPlayerData playerData = PlayerDataCapability.getPlayerData(player);
             Item item = event.getItem().getItem();
             if (item == null) return;
             Set<IDietGroup> groups = DietApi.getInstance().getGroups(player, new ItemStack(item));
 
             if (currentFood != null && !groups.isEmpty()) {
-                playerManager.setValue(MindfulEating.LAST_FOOD, currentFood);
+                playerData.setLastFood(currentFood);
+                syncToClient(player);
             }
 
             if (ModCompat.isStackableSoupEnabled() && !(item instanceof SuspiciousStewItem))
@@ -97,7 +97,6 @@ public class MEEvents {
         }
     }
 
-    // when the player eats cake
     @SubscribeEvent
     public static void onCakeEaten(PlayerInteractEvent.RightClickBlock event) {
         BlockPos pos = event.getPos();
@@ -112,14 +111,15 @@ public class MEEvents {
             if (player.getFoodData().needsFood() && !groups.isEmpty() && descId != null) {
                 ResourceLocation currentFood = parse(descId);
                 if (currentFood != null) {
-                    IDataManager playerManager = ((IDataManager) player);
-                    playerManager.setValue(MindfulEating.LAST_FOOD, currentFood);
+                    IPlayerData playerData = PlayerDataCapability.getPlayerData(player);
+                    playerData.setLastFood(currentFood);
+                    syncToClient(player);
                 }
             }
         }
 
         if (ModCompat.isFarmersDelightLoaded()) {
-            FarmersDelightCompat.pieEatenCheck(block, player, heldItem);
+            ModCompat.pieEatenCheck(block, player, heldItem);
         }
     }
 
@@ -130,7 +130,6 @@ public class MEEvents {
         return ResourceLocation.tryParse(result);
     }
 
-    // while the player is harvesting a block
     @SubscribeEvent
     public static void onPlayerMining(PlayerEvent.BreakSpeed event) {
         Player player = event.getEntity();
@@ -139,7 +138,6 @@ public class MEEvents {
         }
     }
 
-    // when the player harvests a block
     @SubscribeEvent
     public static void onBlockHarvested(BlockEvent.BreakEvent event) {
         Player player = event.getPlayer();
@@ -147,7 +145,6 @@ public class MEEvents {
         player.causeFoodExhaustion(0.005F * ratio);
     }
 
-    // when the player deals damage
     @SubscribeEvent
     public static void onPlayerAttack(AttackEntityEvent event) {
         Player player = event.getEntity();
@@ -155,7 +152,6 @@ public class MEEvents {
         player.causeFoodExhaustion(0.1F * ratio);
     }
 
-    // when the player takes damage
     @SubscribeEvent
     public static void onPlayerDamage(LivingDamageEvent event) {
         if (event.getEntity() instanceof Player) {
@@ -165,7 +161,6 @@ public class MEEvents {
         }
     }
 
-    // when the player naturally regenerates or heals from potion effects
     @SubscribeEvent
     public static void onPlayerHeal(LivingHealEvent event) {
         if (event.getEntity() instanceof Player) {
@@ -175,7 +170,6 @@ public class MEEvents {
         }
     }
 
-    // when the player jumps
     @SubscribeEvent
     public static void onPlayerJump(LivingEvent.LivingJumpEvent event) {
         if (event.getEntity() instanceof Player) {
@@ -196,10 +190,10 @@ public class MEEvents {
             return;
 
         Player player = event.player;
-        IDataManager playerManager = ((IDataManager) player);
+        IPlayerData playerData = PlayerDataCapability.getPlayerData(player);
 
-        if (playerManager.getValue(MindfulEating.SHEEN_COOLDOWN) > 0) {
-            playerManager.setValue(MindfulEating.SHEEN_COOLDOWN, Math.max(0, playerManager.getValue(MindfulEating.SHEEN_COOLDOWN) - 1));
+        if (playerData.getSheenCooldown() > 0) {
+            playerData.setSheenCooldown(Math.max(0, playerData.getSheenCooldown() - 1));
         }
 
         if (player.getActiveEffects().size() != 0) {
@@ -219,7 +213,6 @@ public class MEEvents {
         float reduction = 0;
 
         double disX = player.getX() - player.xOld;
-        // disY is calculated but not used for horizontal movement
         double disZ = player.getZ() - player.zOld;
 
         if (player.getDeltaMovement().length() == 0.0 || disX == 0.0 && disZ == 0.0) {
@@ -240,7 +233,6 @@ public class MEEvents {
         } else if (player.onGround() && player.isSprinting()) {
             reduction = 0.001F * exhaustionReductionShortSheen(player, ExhaustionSource.SPRINT) * distance;
         }
-        // Note: isEyeInFluid with FluidTags is deprecated but still functional in 1.20.1
 
         player.getFoodData().addExhaustion(reduction);
     }
@@ -255,12 +247,12 @@ public class MEEvents {
     }
 
     public static float exhaustionReductionLongSheen(Player player, ExhaustionSource source, int cooldown) {
-        IDataManager playerManager = ((IDataManager) player);
+        IPlayerData playerData = PlayerDataCapability.getPlayerData(player);
 
-        playerManager.setValue(MindfulEating.HURT_OR_HEAL, source == ExhaustionSource.HURT || source == ExhaustionSource.HEAL);
+        playerData.setHurtOrHeal(source == ExhaustionSource.HURT || source == ExhaustionSource.HEAL);
 
         if (!MEConfig.COMMON.proportionalDiet.get()) {
-            ResourceLocation lastFood = playerManager.getValue(MindfulEating.LAST_FOOD);
+            ResourceLocation lastFood = playerData.getLastFood();
             if (lastFood == null) return 0.0F;
 
             Set<IDietGroup> groups = DIET_CACHE.computeIfAbsent(lastFood, rl -> {
@@ -272,7 +264,8 @@ public class MEEvents {
             for (IDietGroup group : groups) {
                 for (String configGroup : MEConfig.COMMON.foodGroupExhaustion[source.ordinal()].get().split("/")) {
                     if (group.getName().equals(configGroup)) {
-                        playerManager.setValue(MindfulEating.SHEEN_COOLDOWN, cooldown);
+                        playerData.setSheenCooldown(cooldown);
+                        syncToClient(player);
                         return -MEConfig.COMMON.exhaustionReduction.get().floatValue();
                     }
                 }
@@ -289,10 +282,17 @@ public class MEEvents {
                 }
                 percentage.set(maxPercentage);
             });
-            if (percentage.get() > 0.0F)
-                playerManager.setValue(MindfulEating.SHEEN_COOLDOWN, cooldown);
+            if (percentage.get() > 0.0F) {
+                playerData.setSheenCooldown(cooldown);
+                syncToClient(player);
+            }
             return -percentage.get();
         }
     }
 
+    private static void syncToClient(Player player) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            PlayerDataSyncPacket.syncToClient(serverPlayer);
+        }
+    }
 }

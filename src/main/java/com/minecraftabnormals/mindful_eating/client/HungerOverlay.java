@@ -2,12 +2,10 @@ package com.minecraftabnormals.mindful_eating.client;
 
 import com.illusivesoulworks.diet.api.DietApi;
 import com.illusivesoulworks.diet.api.type.IDietGroup;
-import com.minecraftabnormals.mindful_eating.compat.AppleskinCompat;
-import com.minecraftabnormals.mindful_eating.compat.FarmersDelightCompat;
 import com.minecraftabnormals.mindful_eating.compat.ModCompat;
-import com.minecraftabnormals.mindful_eating.core.MindfulEating;
 import com.minecraftabnormals.mindful_eating.core.MindfulEatingConstants;
-import com.teamabnormals.blueprint.common.world.storage.tracking.IDataManager;
+import com.minecraftabnormals.mindful_eating.core.capability.IPlayerData;
+import com.minecraftabnormals.mindful_eating.core.capability.PlayerDataCapability;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.resources.ResourceLocation;
@@ -37,7 +35,6 @@ public class HungerOverlay {
     private static final Minecraft mc = Minecraft.getInstance();
     private static final Random random = new Random();
     
-    // Cache for diet groups to avoid per-frame API calls
     private static final Map<ResourceLocation, Set<IDietGroup>> DIET_CACHE = new HashMap<>();
     private static ResourceLocation lastCachedFood = null;
     private static Set<IDietGroup> lastCachedGroups = null;
@@ -72,12 +69,11 @@ public class HungerOverlay {
     }
 
     private static void renderHungerIcons(ForgeGui gui, GuiGraphics graphics, Player player) {
-        IDataManager playerManager = (IDataManager) player;
-        ResourceLocation lastAte = playerManager.getValue(MindfulEating.LAST_FOOD);
+        IPlayerData playerData = PlayerDataCapability.getPlayerData(player);
+        ResourceLocation lastAte = playerData.getLastFood();
 
         if (lastAte == null) return;
 
-        // Use cache for diet groups
         Set<IDietGroup> groups;
         if (Objects.equals(lastAte, lastCachedFood)) {
             groups = lastCachedGroups;
@@ -98,11 +94,11 @@ public class HungerOverlay {
         int top = mc.getWindow().getGuiScaledHeight() - hungerBarRightHeight;
         int left = mc.getWindow().getGuiScaledWidth() / 2 + 91;
 
-        drawHungerIcons(player, foodData, top, left, graphics, playerManager, groups.toArray(new IDietGroup[0]));
+        drawHungerIcons(player, foodData, top, left, graphics, playerData, groups.toArray(new IDietGroup[0]));
     }
 
     @SuppressWarnings("null")
-    private static void drawHungerIcons(Player player, FoodData stats, int top, int left, GuiGraphics graphics, IDataManager playerManager, IDietGroup[] groups) {
+    private static void drawHungerIcons(Player player, FoodData stats, int top, int left, GuiGraphics graphics, IPlayerData playerData, IDietGroup[] groups) {
         int level = stats.getFoodLevel();
         int ticks = mc.gui.getGuiTicks();
         float modifiedSaturation = Math.min(stats.getSaturationLevel(), 20.0F);
@@ -117,8 +113,7 @@ public class HungerOverlay {
                 hasNourishment = player.hasEffect(effect);
             }
         }
-        boolean isAppleskinLoaded = ModCompat.isAppleskinLoaded();
-        boolean hasSheen = playerManager.getValue(MindfulEating.SHEEN_COOLDOWN) > 0;
+        boolean hasSheen = playerData.getSheenCooldown() > 0;
 
         for (int i = 0; i < 10; i++) {
             int idx = i * 2 + 1;
@@ -152,18 +147,16 @@ public class HungerOverlay {
                 y = top + (random.nextInt(3) - 1);
             }
 
-            // Background
             graphics.blit(texture, x, y, backgroundU * 9, textureV, 9, 9, 126, 45);
 
-            // Foreground
             if (idx < level) {
                 graphics.blit(texture, x, y, iconOffset + 36, textureV, 9, 9, 126, 45);
             } else if (idx == level) {
                 graphics.blit(texture, x, y, iconOffset + 45, textureV, 9, 9, 126, 45);
             }
 
-            // Saturation (AppleSkin)
-            if (ModCompat.showAppleskinSaturation()) {
+            // 饱和度显示（由 Mindful Eating 自行渲染）
+            {
                 float effectiveSaturationOfBar = (modifiedSaturation / 2.0F) - i;
                 if (effectiveSaturationOfBar > 0) {
                     int u = 0;
@@ -179,7 +172,6 @@ public class HungerOverlay {
                 }
             }
 
-            // Sheen (Nourishment effect)
             if (idx <= level && hasSheen) {
                 int tick = ticks % 20;
                 if ((tick < idx + level / 4 && tick > idx - level / 4) || (tick == 49 && i == 0)) {

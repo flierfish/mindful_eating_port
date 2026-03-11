@@ -8,7 +8,6 @@ public class MindfulEatingConstants {
     // Mod IDs
     public static final String LSO_MODID = "legendarysurvivaloverhaul";
     public static final String FARMERS_DELIGHT_MODID = "farmersdelight";
-    public static final String APPLESKIN_MODID = "appleskin";
 
     // Textures
     public static final ResourceLocation GUI_HUNGER_ICONS = ResourceLocation.fromNamespaceAndPath(MODID, "textures/gui/hunger_icons.png");
